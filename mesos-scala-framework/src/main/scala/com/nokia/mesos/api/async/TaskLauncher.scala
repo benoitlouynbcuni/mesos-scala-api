@@ -90,7 +90,8 @@ object TaskLauncher {
   final case class TaskDescriptor(
     name: String,
     resources: Seq[Resource],
-    job: Either[CommandInfo, ContainerInfo],
+    command: Option[CommandInfo] = None,
+    container: Option[ContainerInfo] = None,
     labels: Seq[Label] = Nil
   )
 

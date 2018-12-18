@@ -188,28 +188,13 @@ object TaskLauncherImpl {
   )
 
   private def taskInfo(offer: mesos.Offer, task: TaskRequest): mesos.TaskInfo = {
-    task.desc.job match {
-      case Left(command) =>
-        mesos.TaskInfo(
-          name = task.desc.name,
-          taskId = task.id,
-          slaveId = offer.slaveId,
-          resources = task.desc.resources,
-          executor = None,
-          command = Some(command),
-          container = None
-        )
-      // TODO: make this case more generic; this will run docker as a task, with the default `docker run image`
-      case Right(container) =>
-        mesos.TaskInfo(
-          name = task.desc.name,
-          taskId = task.id,
-          slaveId = offer.slaveId,
-          resources = task.desc.resources,
-          executor = None,
-          command = Some(mesos.CommandInfo(shell = Some(false))),
-          container = Some(container)
-        )
-    }
+    mesos.TaskInfo(
+      name = task.desc.name,
+      taskId = task.id,
+      slaveId = offer.slaveId,
+      resources = task.desc.resources,
+      command = task.desc.command,
+      container = task.desc.container
+    )
   }
 }
