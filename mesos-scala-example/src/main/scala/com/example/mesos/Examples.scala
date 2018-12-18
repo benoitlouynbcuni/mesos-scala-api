@@ -94,7 +94,7 @@ object Examples extends LazyLogging {
   def shellTaskDescriptor(cmd: String): TaskDescriptor = {
     TaskDescriptor(
       "runSingleCommand task",
-      Seq(Resource("cpus", Value.Type.SCALAR, Some(Value.Scalar(1.0)))),
+      Seq(Resource(name = "cpus", `type` = Value.Type.SCALAR, scalar = Some(Value.Scalar(1.0)))),
       Left(CommandInfo(shell = Some(true), value = Some(cmd)))
     )
   }

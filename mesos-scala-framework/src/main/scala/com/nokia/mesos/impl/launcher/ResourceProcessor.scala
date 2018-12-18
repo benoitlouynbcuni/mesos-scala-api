@@ -102,18 +102,14 @@ object ResourceProcessor {
    */
   def addResource(a: Resource, b: Resource): List[Resource] = {
     if (a.name == b.name) {
-      (a, b) match {
-        case (Resource(_, _, Some(Scalar(s1)), _, _, _, _, _, _), Resource(_, _, Some(Scalar(s2)), _, _, _, _, _, _)) => {
-          a.copy(scalar = Some(Scalar(s1 + s2))) :: Nil
-        }
-        case (Resource(_, _, _, Some(Ranges(rs1)), _, _, _, _, _), Resource(_, _, _, Some(Ranges(rs2)), _, _, _, _, _)) => {
+      ((a.scalar, a.ranges, a.set), (b.scalar, b.ranges, b.set)) match {
+        case ((Some(Scalar(s1)), _, _), (Some(Scalar(s2)), _, _)) => a.copy(scalar = Some(Scalar(s1 + s2))) :: Nil
+        case ((_, Some(Ranges(rs1)), _), (_, Some(Ranges(rs2)), _)) =>
           val sum = (rs1 ++ rs2).to[Set].to[Seq]
           a.copy(ranges = Some(Ranges(sum))) :: Nil
-        }
-        case (Resource(_, _, _, _, Some(mesos.Value.Set(es1)), _, _, _, _), Resource(_, _, _, _, Some(mesos.Value.Set(es2)), _, _, _, _)) => {
+        case ((_, _, Some(mesos.Value.Set(es1))), (_, _, Some(mesos.Value.Set(es2)))) =>
           val sum = (es1 ++ es2).to[Set].to[Seq]
           a.copy(set = Some(mesos.Value.Set(sum))) :: Nil
-        }
         // TODO: Text resource type
         case _ => List(a, b)
       }
@@ -125,15 +121,13 @@ object ResourceProcessor {
   private[mesos] def trySubtractResource(a: Resource, b: Resource): Option[Resource] = {
     // FIXME: what to do when the result is zero?
     if (a.name == b.name) {
-      (a, b) match {
-        case (Resource(_, _, Some(Scalar(s1)), _, _, _, _, _, _), Resource(_, _, Some(Scalar(s2)), _, _, _, _, _, _)) => {
+      ((a.scalar, a.ranges, a.set), (b.scalar, b.ranges, b.set)) match {
+        case ((Some(Scalar(s1)), _, _), (Some(Scalar(s2)), _, _)) =>
           val rem = s1 - s2
           if (rem >= 0) Some(a.copy(scalar = Some(Scalar(rem)))) else None
-        }
-        case (Resource(_, _, _, Some(Ranges(rs1)), _, _, _, _, _), Resource(_, _, _, Some(Ranges(rs2)), _, _, _, _, _)) => {
+        case ((_, Some(Ranges(rs1)), _), (_, Some(Ranges(rs2)), _)) =>
           trySubtractRanges(rs1, rs2).map(remainder => a.copy(ranges = Some(Ranges(remainder))))
-        }
-        case (Resource(_, _, _, _, Some(mesos.Value.Set(es1)), _, _, _, _), Resource(_, _, _, _, Some(mesos.Value.Set(es2)), _, _, _, _)) => {
+        case ((_, _, Some(mesos.Value.Set(es1))), (_, _, Some(mesos.Value.Set(es2)))) =>
           val offer = es1.toSet
           val requirement = es2.toSet
           val (found, remainder) = offer.partition(requirement)
@@ -142,7 +136,6 @@ object ResourceProcessor {
           } else {
             None
           }
-        }
         // TODO: Text resource type
         case _ => None
       }

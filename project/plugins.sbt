@@ -38,8 +38,6 @@ addSbtPlugin("org.scalariform" % "sbt-scalariform" % "1.6.0")
 
 addSbtPlugin("org.scoverage" % "sbt-scoverage" % "1.3.3")
 
-addSbtPlugin("com.trueaccord.scalapb" % "sbt-scalapb" % "0.4.15")
-
 addSbtPlugin("com.typesafe.sbteclipse" % "sbteclipse-plugin" % "4.0.0")
 
 addSbtPlugin("de.heikoseeberger" % "sbt-header" % "1.5.1")

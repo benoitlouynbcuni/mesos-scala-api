@@ -28,7 +28,6 @@ import com.typesafe.sbt.SbtScalariform.ScalariformKeys
 import de.heikoseeberger.sbtheader.HeaderKey._
 import de.heikoseeberger.sbtheader.HeaderPattern
 import scalariform.formatter.preferences._
-import com.trueaccord.scalapb.{ScalaPbPlugin => PB}
 import com.typesafe.sbteclipse.plugin.EclipsePlugin.EclipseKeys
 
 lazy val root = (project in file(".")).
@@ -55,13 +54,26 @@ lazy val `mesos-scala-interface` = (project in file("mesos-scala-interface")).
   settings(commonSettings: _*).
   settings(publishSettings: _*).
   settings(
-    libraryDependencies += "org.apache.mesos" % "mesos" % "0.28.2",
-    PB.protobufSettings,
-    PB.javaConversions in PB.protobufConfig := true,
-    // don't generate Java code from the .proto file (we only need Scala):
-    PB.generatedTargets in PB.protobufConfig ~= { trgs => for ((f, p) <- trgs if !p.endsWith(".java")) yield (f, p) },
-    PB.flatPackage in PB.protobufConfig := false
+    libraryDependencies += "org.apache.mesos" % "mesos" % "1.4.0",
+    libraryDependencies += "com.thesamet.scalapb" %% "scalapb-runtime" % scalapb.compiler.Version.scalapbVersion % "protobuf",
+    PB.targets in Compile := Seq(
+      PB.gens.java -> (sourceManaged in Compile).value,
+      scalapb.gen(javaConversions=true, flatPackage=false, grpc=false) -> (sourceManaged in Compile).value
+    )
+  ).
+  settings(
+    excludeFilter in (Compile, managedSources) := "*.java",
+    managedSources in Compile <<= (managedSources in Compile, excludeFilter in (Compile, managedSources)) map { (files, filter) =>
+      files.filter(f => !filter.accept(f))
+    }
   )
+//  settings(
+//    mappings in (Compile,packageBin) ~= { ms: Seq[(File, String)] =>
+//      ms filterNot { case (file, toPath) =>
+//        toPath == "org/apache/mesos/Protos.class" || (toPath.startsWith("org/apache/mesos/Protos$") && toPath.endsWith(".class"))
+//      }
+//    }
+//  )
 
 lazy val `mesos-scala-framework` = (project in file("mesos-scala-framework")).
   settings(commonSettings: _*).
