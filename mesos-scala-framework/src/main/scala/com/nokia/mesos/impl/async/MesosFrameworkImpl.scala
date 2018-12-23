@@ -28,20 +28,22 @@ package com.nokia.mesos.impl.async
 import java.util.concurrent.atomic.AtomicReference
 
 import scala.collection.concurrent
-import scala.concurrent.{ blocking, Future, Promise }
+import scala.concurrent.{ Future, Promise, blocking }
 import scala.concurrent.duration._
-
 import org.apache.mesos.mesos
 import org.apache.mesos.mesos._
 import org.apache.mesos.mesos.TaskState.{ TASK_STAGING, TASK_STARTING }
-
 import com.nokia.mesos.api.async._
 import com.nokia.mesos.api.async.MesosDriver
 import com.nokia.mesos.api.stream.MesosEvents
 import com.nokia.mesos.api.stream.MesosEvents._
 import com.typesafe.scalalogging.LazyLogging
+import monix.execution.{ Ack, Cancelable }
+import monix.execution.Ack.Continue
+import monix.reactive.{ Observable, Observer }
+import monix.reactive.observers.Subscriber
+import monix.execution.Scheduler.{ global => scheduler }
 
-import rx.lang.scala.{ Observable, Subscriber, Subscription }
 import scala.concurrent.ExecutionContext
 
 /** Default implementation of `MesosFramework` */
@@ -66,22 +68,22 @@ trait MesosFrameworkImpl extends MesosFramework with LazyLogging {
    * If no connection related event arrives for this duration,
    * the connection attempt will be considered unsuccessful.
    */
-  val connectTimeout: Duration = 30.seconds
+  val connectTimeout: FiniteDuration = 30.seconds
 
   /**
    * If no task launch related event arrives for this duration,
    * the launch attempt will be considered unsuccessful.
    */
-  val launchTimeout: Duration = 30.seconds
+  val launchTimeout: FiniteDuration = 30.seconds
 
   /**
    * If no task kill related event arrives for this duration,
    * the kill attempt will be considered unsuccessful.
    */
-  val killTimeout: Duration = 30.seconds
+  val killTimeout: FiniteDuration = 30.seconds
 
   /** Subscriptions of currently running tasks */
-  private[this] val taskStateSubscriptions = new concurrent.TrieMap[TaskID, Subscription]
+  private[this] val taskStateSubscriptions = new concurrent.TrieMap[TaskID, Cancelable]
 
   /** Current state of the framework */
   private[this] val state = new AtomicReference[State](State.Disconnected)
@@ -105,6 +107,27 @@ trait MesosFrameworkImpl extends MesosFramework with LazyLogging {
       require(false, "not in disconnected state")
     }
 
+    val observer = new Observer[OfferEvent] {
+      override def onNext(elem: OfferEvent): Future[Ack] = {
+        elem match {
+          case MesosEvents.Offer(o) =>
+            handle(o).recover {
+              case ex: Any =>
+                logger.warn(s"Exception while handling offer (will decline)", ex)
+                o.foreach(off => decline(off.id))
+            }(driver.executor)
+            Continue
+          case Rescindment(offId) =>
+            scheduling.rescind(Seq(offId))
+            Continue
+        }
+      }
+
+      override def onError(ex: Throwable): Unit = ()
+
+      override def onComplete(): Unit = ()
+    }
+
     val offerSubscription = driver.eventProvider.events.collect { case off: OfferEvent => off }.subscribe(_ match {
       case MesosEvents.Offer(o) =>
         handle(o).recover {
@@ -112,39 +135,37 @@ trait MesosFrameworkImpl extends MesosFramework with LazyLogging {
             logger.warn(s"Exception while handling offer (will decline)", ex)
             for (off <- o) this.decline(off.id)
         } (driver.executor)
+        Continue
       case Rescindment(offId) =>
         scheduling.rescind(Seq(offId))
-    })
+        Continue
+    })(scheduler)
 
     val p: Promise[(FrameworkID, MasterInfo, MesosDriver)] = Promise()
     val connectionEvents = driver.eventProvider.events.collect { case e @ (_: Registered | Disconnected | _: MesosError) => e }
-    connectionEvents.timeout(connectTimeout).subscribe(
-      new Subscriber[MesosEvent] {
-
-        override def onError(ex: Throwable): Unit = {
+    connectionEvents.timeoutOnSlowUpstream(connectTimeout).subscribe(
+      (e: MesosEvent) => e match {
+        case r: Registered =>
+          state.set(State.Connected(driver, offerSubscription))
+          p.success((r.frameworkId, r.masterInfo, driver))
+          Ack.Stop
+        case Disconnected =>
+          state.set(State.Disconnected)
+          p.failure(new MesosException("Disconnected while connecting"))
+          Ack.Stop
+        case e: MesosError =>
           state.compareAndSet(connecting, State.Disconnected)
-          MesosFrameworkImpl.handleTimeout(ex, p, "connection attempt timed out")
-        }
-
-        override def onNext(e: MesosEvent): Unit = e match {
-          case r: Registered =>
-            unsubscribe()
-            state.set(State.Connected(driver, offerSubscription))
-            p.success((r.frameworkId, r.masterInfo, driver))
-          case Disconnected =>
-            unsubscribe()
-            state.set(State.Disconnected)
-            p.failure(new MesosException("Disconnected while connecting"))
-          case e: MesosError =>
-            unsubscribe()
-            state.compareAndSet(connecting, State.Disconnected)
-            p.failure(new MesosException(e.message))
-          case _ =>
-            // this can never happen
-            throw new AssertionError(s"unexpected event: $e")
-        }
+          p.failure(new MesosException(e.message))
+          Ack.Stop
+        case _ =>
+          // this can never happen
+          throw new AssertionError(s"unexpected event: $e")
+      },
+      (ex: Throwable) => {
+        state.compareAndSet(connecting, State.Disconnected)
+        handleTimeout(ex, p, "connection attempt timed out")
       }
-    )
+    )(scheduler)
 
     logger info "Starting Mesos driver"
     val status = driver.schedulerDriver.start
@@ -192,31 +213,23 @@ trait MesosFrameworkImpl extends MesosFramework with LazyLogging {
     // FIXME: what to do if 2 TASK_RUNNING arrives for 1 task (in theory, that shouldn't happen)
     val promise = Promise[TaskInfo]()
     val taskEventStream = driver.eventProvider.events.collect(collectByTaskId(task.taskId))
-    val replayStream = taskEventStream.replay
-    taskEventStream.timeout(launchTimeout).subscribe(
-      new Subscriber[TaskEvent]() {
-
-        override def onError(ex: Throwable): Unit =
-          MesosFrameworkImpl.handleTimeout(ex, promise, "task launch attempt timed out")
-
-        override def onNext(e: TaskEvent): Unit = e match {
-          case TaskEvent(_, TaskState.TASK_RUNNING, _) => {
-            logger info s"Task ${task.taskId.value} is RUNNING, so we successfully launched it"
-            unsubscribe()
-            subscribeForTaskStateChanges(taskEventStream, task.taskId)
-            promise.success(task)
-          }
-          case TaskEvent(_, st @ (TASK_STAGING | TASK_STARTING), _) => {
-            // don't unsubscribe, wait for it to really start
-            logger info s"Task ${task.taskId.value} is ${st}, so we're still waiting for it to start"
-          }
-          case TaskEvent(_, st, _) => {
-            unsubscribe()
-            promise.failure(new MesosException(s"Task '${task.taskId.value}' became $st"))
-          }
-        }
-      }
-    )
+    //    val replayStream = taskEventStream.replay
+    taskEventStream.timeoutOnSlowUpstream(launchTimeout).subscribe(
+      (e: TaskEvent) => e match {
+        case TaskEvent(_, TaskState.TASK_RUNNING, _) =>
+          logger info s"Task ${task.taskId.value} is RUNNING, so we successfully launched it"
+          subscribeForTaskStateChanges(taskEventStream, task.taskId)
+          promise.success(task)
+          Ack.Stop
+        case TaskEvent(_, st @ (TASK_STAGING | TASK_STAGING), _) =>
+          logger info s"Task ${task.taskId.value} is ${st}, so we're still waiting for it to start"
+          Ack.Continue
+        case TaskEvent(_, st, _) =>
+          promise.failure(new MesosException(s"Task '${task.taskId.value}' became $st"))
+          Ack.Stop
+      },
+      (ex: Throwable) => handleTimeout(ex, promise, "task launch attempt timed out")
+    )(scheduler)
     promise
   }
 
@@ -231,23 +244,15 @@ trait MesosFrameworkImpl extends MesosFramework with LazyLogging {
     if (state.get().isConnected) {
       val prev = taskStateSubscriptions.put(
         tid,
-        stream.subscribe(
-          new Subscriber[TaskEvent]() {
-            override def onNext(e: TaskEvent): Unit = {
-              if (MesosFramework.terminalStates.contains(e.state)) {
-                unsubscribe()
-              }
-            }
-          }
-        )
+        stream.subscribe(e => if (MesosFramework.terminalStates.contains(e.state)) Ack.Stop else Ack.Continue)(scheduler)
       )
 
       // clean up previous subscription (if any):
-      prev.foreach(_.unsubscribe())
+      prev.foreach(_.cancel())
 
       if (!state.get().isConnected) {
         // disconnected in the meantime
-        taskStateSubscriptions.remove(tid).foreach(_.unsubscribe())
+        taskStateSubscriptions.remove(tid).foreach(_.cancel())
       }
     }
   }
@@ -257,33 +262,28 @@ trait MesosFrameworkImpl extends MesosFramework with LazyLogging {
     val p: Promise[TaskID] = Promise()
     driver.eventProvider.events
       .collect(collectByTaskId(taskId))
-      .timeout(killTimeout)
-      .subscribe(new Subscriber[TaskEvent]() {
-
-        override def onError(ex: Throwable): Unit =
-          MesosFrameworkImpl.handleTimeout(ex, p, "task kill timed out")
-
-        override def onNext(e: TaskEvent): Unit = e match {
-          case TaskEvent(`taskId`, TaskState.TASK_KILLED, _) => {
+      .timeoutOnSlowUpstream(killTimeout)
+      .subscribe(
+        (e: TaskEvent) => e match {
+          case TaskEvent(`taskId`, TaskState.TASK_KILLED, _) =>
             logger info s"Successfully killed task ${taskId.value}"
-            unsubscribe()
             p.success(taskId)
-          }
-          case TaskEvent(`taskId`, TaskState.TASK_LOST, ts) => {
-            unsubscribe()
+            Ack.Stop
+          case TaskEvent(`taskId`, TaskState.TASK_LOST, ts) =>
             // we probably tried to kill an already completed task
             logger warn s"Failed to kill task ${taskId.value} (TASK_LOST)"
             p.failure(new MesosException(s"TASK_LOST: ${ts.message.getOrElse(taskId.value)}"))
-          }
-          case TaskEvent(`taskId`, otherState, _) if MesosFramework.terminalStates(otherState) => {
-            unsubscribe()
+            Ack.Stop
+          case TaskEvent(`taskId`, otherState, _) if MesosFramework.terminalStates(otherState) =>
             // we cannot kill it, but it is terminated anyway
             logger info s"Task ${taskId.value} is already in terminal state"
             p.success(taskId)
-          }
-          case _ => // not yet killed, ignore
-        }
-      })
+            Ack.Stop
+          case _ =>
+            Ack.Continue
+        },
+        (ex: Throwable) => handleTimeout(ex, p, "task kill timed out")
+      )(scheduler)
 
     logger info s"Trying to kill task ${taskId.value}"
     driver.schedulerDriver.killTask(taskId)
@@ -307,11 +307,11 @@ trait MesosFrameworkImpl extends MesosFramework with LazyLogging {
     val (driver, subs) = startDisconnecting()
 
     // unsubscribe from offers:
-    subs.unsubscribe()
+    subs.cancel()
 
     // unsubscribe from updates of currently running tasks:
     for (id <- taskStateSubscriptions.keys) {
-      taskStateSubscriptions.remove(id).foreach(_.unsubscribe())
+      taskStateSubscriptions.remove(id).foreach(_.cancel())
     }
 
     act match {
@@ -333,7 +333,7 @@ trait MesosFrameworkImpl extends MesosFramework with LazyLogging {
     } (driver.executor)
   }
 
-  private def startDisconnecting(): (MesosDriver, Subscription) = {
+  private def startDisconnecting(): (MesosDriver, Cancelable) = {
     state.get() match {
       case c @ State.Connected(dr, s) =>
         if (!state.compareAndSet(c, State.Disconnecting(dr))) {
@@ -389,7 +389,7 @@ private object MesosFrameworkImpl {
 
     final case class Connecting(driver: MesosDriver) extends HalfConnected
 
-    final case class Connected(driver: MesosDriver, offerSubs: Subscription) extends HalfConnected {
+    final case class Connected(driver: MesosDriver, offerSubs: Cancelable) extends HalfConnected {
 
       override def isConnected =
         true

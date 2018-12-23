@@ -27,9 +27,9 @@ package com.nokia.mesos.impl.scheduler
 
 import com.nokia.mesos.api.stream.MesosEvents
 import com.nokia.mesos.api.stream.MesosEvents.{ MesosEvent, TaskEvent }
-
-import rx.lang.scala.Observable
-import rx.lang.scala.Subject
+import monix.reactive.{ MulticastStrategy, Observable }
+import monix.reactive.subjects.{ ConcurrentSubject, Subject }
+import monix.execution.Scheduler.Implicits.global
 
 /** Default implementation of `MesosEvents` */
 class EventProvidingScheduler extends EventEmittingScheduler with MesosEvents {
@@ -38,7 +38,7 @@ class EventProvidingScheduler extends EventEmittingScheduler with MesosEvents {
 
   // TODO: decouple subscribers from mesos callbacks
   // TODO: decouple subscribers from each other
-  private[this] val _events = Subject[MesosEvent]().toSerialized
+  private[this] val _events = ConcurrentSubject[MesosEvent](MulticastStrategy.publish)
 
   protected override def notify(event: MesosEvent): Unit = {
     val eventRepr = event match {

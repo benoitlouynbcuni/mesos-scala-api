@@ -25,11 +25,10 @@
  */
 package com.nokia.mesos.api.stream
 
+import monix.reactive.Observable
+
 import scala.collection.immutable
-
 import org.apache.mesos.mesos
-
-import rx.lang.scala.Observable
 
 /**
  * Reactive stream API for Mesos events

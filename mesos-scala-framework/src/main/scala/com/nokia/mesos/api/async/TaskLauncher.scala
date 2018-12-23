@@ -28,12 +28,9 @@ package com.nokia.mesos.api.async
 import scala.collection.immutable
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
-
 import org.apache.mesos.mesos._
-
 import com.nokia.mesos.api.stream.MesosEvents.TaskEvent
-
-import rx.lang.scala.Observable
+import monix.reactive.Observable
 
 /**
  * High level task launching API

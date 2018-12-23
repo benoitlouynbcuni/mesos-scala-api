@@ -28,9 +28,7 @@ package com.example.mesos
 import scala.concurrent.{ Await, Future, Promise }
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
-
 import org.apache.mesos.mesos.{ CommandInfo, FrameworkInfo, Resource, Value }
-
 import com.nokia.mesos.DriverFactory
 import com.nokia.mesos.FrameworkFactory
 import com.nokia.mesos.api.async.MesosException
@@ -39,8 +37,8 @@ import com.nokia.mesos.api.async.TaskLauncher
 import com.nokia.mesos.api.async.TaskLauncher.TaskDescriptor
 import com.nokia.mesos.api.stream.MesosEvents.{ MesosEvent, TaskEvent }
 import com.typesafe.scalalogging.LazyLogging
-
-import rx.lang.scala.Subscriber
+import monix.execution.Ack
+import monix.execution.Scheduler.{ global => scheduler }
 
 object Examples extends LazyLogging {
 
@@ -76,13 +74,16 @@ object Examples extends LazyLogging {
       task <- launched.info
     } {
       logger.info(s"Task successfully started on slave ${task.slaveId.value}")
-      launched.events.subscribe(_ match {
-        case te: TaskEvent if te.state.isTaskFinished => p.success(())
-        case te: TaskEvent if (te.state.isTaskError || te.state.isTaskFailed ||
-          te.state.isTaskLost || te.state.isTaskKilled || te.state.isTaskKilling) =>
+      launched.events.subscribe((e: TaskEvent) => e match {
+        case te: TaskEvent if te.state.isTaskFinished =>
+          p.success(())
+          Ack.Stop
+        case te: TaskEvent if te.state.isTaskError || te.state.isTaskFailed ||
+          te.state.isTaskLost || te.state.isTaskKilled || te.state.isTaskKilling =>
           p.failure(new MesosException("task encountered error"))
-        case _ =>
-      })
+          Ack.Stop
+        case _ => Ack.Continue
+      })(scheduler)
     }
 
     for {

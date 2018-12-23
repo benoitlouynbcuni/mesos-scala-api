@@ -28,12 +28,10 @@ package com.nokia.mesos.test
 import scala.concurrent._
 import scala.concurrent.duration._
 import scala.util.Failure
-
 import org.apache.mesos.mesos._
 import org.scalamock.scalatest.MockFactory
 import org.scalatest.{ FlatSpec, Matchers, OneInstancePerTest }
 import org.scalatest.concurrent.ScalaFutures
-
 import com.nokia.mesos.SchedulerDriver
 import com.nokia.mesos.api.async.MesosDriver
 import com.nokia.mesos.api.async.MesosException
@@ -41,8 +39,8 @@ import com.nokia.mesos.api.async.Scheduling
 import com.nokia.mesos.api.stream.MesosEvents
 import com.nokia.mesos.api.stream.MesosEvents.MesosEvent
 import com.nokia.mesos.impl.async.MesosFrameworkImpl
-
-import rx.lang.scala.{ Observable, Subject }
+import monix.reactive.Observable
+import monix.reactive.subjects.PublishSubject
 
 class MesosFrameworkSpec extends FlatSpec with Matchers with ScalaFutures with MockFactory with OneInstancePerTest {
 
@@ -52,7 +50,7 @@ class MesosFrameworkSpec extends FlatSpec with Matchers with ScalaFutures with M
   val testTimeout = 2.second
   val timeoutMultiplier = 5
 
-  val events = Subject[MesosEvent]()
+  val events = PublishSubject[MesosEvent]()
   val driver = stub[SchedulerDriver]
 
   def emit(e: MesosEvent): Unit = events.onNext(e)

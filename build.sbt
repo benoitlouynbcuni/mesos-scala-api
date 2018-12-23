@@ -69,7 +69,8 @@ lazy val `mesos-scala-framework` = (project in file("mesos-scala-framework")).
   dependsOn(`mesos-scala-interface`).
   settings(
     libraryDependencies ++= Seq(
-      "io.reactivex" %% "rxscala" % "0.26.1"
+      "io.monix" %% "monix" % "3.0.0-RC2"
+//      "io.reactivex" %% "rxscala" % "0.26.1"
     )
   )
 

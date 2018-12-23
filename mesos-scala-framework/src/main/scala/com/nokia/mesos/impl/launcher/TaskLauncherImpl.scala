@@ -171,8 +171,8 @@ trait TaskLauncherImpl extends TaskLauncher with LazyLogging {
           p.future.map { tis => tis(idx) },
           fw.currentDriver().eventProvider.events
             .collect(MesosEvents.collectByTaskId(id))
-            .takeUntil { ev => MesosFramework.terminalStates.contains(ev.state) }
-            .replay.autoConnect
+            .liftByOperator(new TakeUntilByPredicateOperator[TaskEvent](ev => MesosFramework.terminalStates.contains(ev.state)))
+            .cache
         )
     }
   }

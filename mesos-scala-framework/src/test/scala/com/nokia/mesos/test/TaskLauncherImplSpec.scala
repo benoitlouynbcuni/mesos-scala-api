@@ -30,24 +30,23 @@ import scala.concurrent.ExecutionContext
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.{ Future, Promise }
 import scala.concurrent.duration._
-
 import org.apache.mesos.mesos._
 import org.apache.mesos.mesos.Value.{ Scalar, Type }
 import org.scalamock.scalatest.MockFactory
 import org.scalatest.{ FlatSpec, Matchers, OneInstancePerTest }
 import org.scalatest.concurrent.ScalaFutures
-
 import com.nokia.mesos.api.async.MesosFramework
 import com.nokia.mesos.api.async.TaskLauncher.{ Filter, TaskDescriptor }
 import com.nokia.mesos.api.stream.MesosEvents
 import com.nokia.mesos.api.stream.MesosEvents.MesosEvent
 import com.nokia.mesos.impl.launcher.SimpleScheduling
 import com.nokia.mesos.impl.launcher.TaskLauncherImpl
-
-import rx.lang.scala.Subject
 import com.nokia.mesos.api.stream.MesosEvents.OfferEvent
 import com.nokia.mesos.api.async.MesosDriver
 import com.nokia.mesos.SchedulerDriver
+import monix.execution.Ack
+import monix.reactive.subjects.PublishSubject
+import monix.execution.Scheduler.{ global => scheduler }
 
 class TaskLauncherImplSpec extends FlatSpec with Matchers with ScalaFutures with MockFactory with OneInstancePerTest {
 
@@ -56,7 +55,7 @@ class TaskLauncherImplSpec extends FlatSpec with Matchers with ScalaFutures with
 
   // set up dependencies
   val mockFw = mock[MesosFramework]
-  val mockEvents = Subject[MesosEvent]()
+  val mockEvents = PublishSubject[MesosEvent]()
   val mockEventProvider = new MesosEvents { override def events = mockEvents }
   val mockDriver = new MesosDriver {
     lazy val executor: ExecutionContext = global
@@ -76,8 +75,9 @@ class TaskLauncherImplSpec extends FlatSpec with Matchers with ScalaFutures with
     mockEventProvider.events.collect { case off: OfferEvent => off }.subscribe(_ match {
       case MesosEvents.Offer(o) =>
         handle(o)
-      case _ =>
-    })
+        Ack.Continue
+      case _ => Ack.Continue
+    })(scheduler)
   }
 
   protected override def withExpectations[T](what: => T): T = {
@@ -296,12 +296,14 @@ class TaskLauncherImplSpec extends FlatSpec with Matchers with ScalaFutures with
       if (ev.state == TaskState.TASK_RUNNING) {
         lt.events.foldLeft(Vector.empty[MesosEvents.TaskEvent])(_ :+ _).subscribe { evs =>
           evsPLate.success(evs)
-        }
+          Ack.Continue
+        }(scheduler)
       }
       evs :+ ev
     }.subscribe { evs =>
       evsP.success(evs)
-    }
+      Ack.Continue
+    }(scheduler)
 
     send(offerEv("RESOURCE_A"))
     fut.futureValue should be(ti1.copy(taskId = generatedId.get()))
