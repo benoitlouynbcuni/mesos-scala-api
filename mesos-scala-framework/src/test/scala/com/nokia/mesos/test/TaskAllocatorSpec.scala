@@ -37,8 +37,8 @@ class TaskAllocatorSpec extends FlatSpec with Matchers {
 
   val allocator = new TaskAllocator {}
 
-  val ra = Resource("a", Value.Type.SCALAR, Some(Value.Scalar(5)))
-  val rb = Resource("b", Value.Type.SCALAR, Some(Value.Scalar(6)))
+  val ra = Resource(name = "a", `type` = Value.Type.SCALAR, scalar = Some(Value.Scalar(5)))
+  val rb = Resource(name = "b", `type` = Value.Type.SCALAR, scalar = Some(Value.Scalar(6)))
   val td1 = TaskRequest(TaskDescriptor("task 1", immutable.Seq(ra), Left(CommandInfo())), TaskID("tid1"))
   val td2 = TaskRequest(TaskDescriptor("task 2", immutable.Seq(rb), Left(CommandInfo())), TaskID("tid2"))
 
@@ -50,15 +50,15 @@ class TaskAllocatorSpec extends FlatSpec with Matchers {
       t1s != t2s
     }
     val offers = immutable.Seq(
-      Offer(OfferID("off1"), FrameworkID("fw-1"), SlaveID("s1"), "host", None, Seq(ra, rb)),
-      Offer(OfferID("off2"), FrameworkID("fw-1"), SlaveID("s2"), "host", None, Seq(ra, rb))
+      Offer(OfferID("off1"), FrameworkID("fw-1"), SlaveID("s1"), "host", None, resources = Seq(ra, rb)),
+      Offer(OfferID("off2"), FrameworkID("fw-1"), SlaveID("s2"), "host", None, resources = Seq(ra, rb))
     )
     allocator.tryAllocate(offers, tasks, Some(filter)) should be('defined)
   }
 
   it should "work with duplicate tasks" in {
     val offers = immutable.Seq(
-      Offer(OfferID("off2"), FrameworkID("fw-1"), SlaveID("s2"), "host", None, Seq(ra))
+      Offer(OfferID("off2"), FrameworkID("fw-1"), SlaveID("s2"), "host", None, resources = Seq(ra))
     )
     allocator.tryAllocate(offers, Seq(td1, td1), None) shouldNot be('defined)
   }

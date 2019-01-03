@@ -36,23 +36,23 @@ import com.nokia.mesos.impl.launcher.ResourceProcessor
 
 class ResourceProcessorSpec extends FlatSpec with Matchers with GeneratorDrivenPropertyChecks {
 
-  val r1 = Resource("a", Type.SCALAR, Some(Scalar(5)))
-  val r2 = Resource("a", Type.SCALAR, Some(Scalar(3)))
-  val rx = Resource("x", Type.SCALAR, Some(Scalar(3)))
-  val rx2 = Resource("x", Type.SCALAR, Some(Scalar(2)))
-  val ry = Resource("y", Type.SET, set = Some(mesos.Value.Set(Seq("aaa", "bbb", "ccc"))))
-  val rz1 = Resource("y", Type.SET, set = Some(mesos.Value.Set(Seq("bbb"))))
-  val rz2 = Resource("y", Type.SET, set = Some(mesos.Value.Set(Seq("aaa", "bbb", "ccc", "xxx"))))
+  val r1 = Resource(name = "a", `type` = Type.SCALAR, scalar = Some(Scalar(5)))
+  val r2 = Resource(name = "a", `type` = Type.SCALAR, scalar = Some(Scalar(3)))
+  val rx = Resource(name = "x", `type` = Type.SCALAR, scalar = Some(Scalar(3)))
+  val rx2 = Resource(name = "x", `type` = Type.SCALAR, scalar = Some(Scalar(2)))
+  val ry = Resource(name = "y", `type` = Type.SET, set = Some(mesos.Value.Set(Seq("aaa", "bbb", "ccc"))))
+  val rz1 = Resource(name = "y", `type` = Type.SET, set = Some(mesos.Value.Set(Seq("bbb"))))
+  val rz2 = Resource(name = "y", `type` = Type.SET, set = Some(mesos.Value.Set(Seq("aaa", "bbb", "ccc", "xxx"))))
 
-  val range1 = Resource("range", Type.RANGES, ranges = Some(Ranges(Seq(Range(1, 3), Range(11, 13)))))
-  val range1rem = Resource("range", Type.RANGES, ranges = Some(Ranges(Seq(Range(1, 1), Range(3, 3), Range(11, 13)))))
-  val range2 = Resource("range", Type.RANGES, ranges = Some(Ranges(Seq(Range(4, 6), Range(14, 16)))))
-  val range2rem = Resource("range", Type.RANGES, ranges = Some(Ranges(Seq(Range(4, 6), Range(14, 14)))))
-  val rangeReq = Resource("range", Type.RANGES, ranges = Some(Ranges(Seq(Range(2, 2))))) //, Range(15, 16)))))
-  val rangeX = Resource("range", Type.RANGES, ranges = Some(Ranges(Seq(Range(2, 2), Range(15, 17)))))
+  val range1 = Resource(name = "range", `type` = Type.RANGES, ranges = Some(Ranges(Seq(Range(1, 3), Range(11, 13)))))
+  val range1rem = Resource(name = "range", `type` = Type.RANGES, ranges = Some(Ranges(Seq(Range(1, 1), Range(3, 3), Range(11, 13)))))
+  val range2 = Resource(name = "range", `type` = Type.RANGES, ranges = Some(Ranges(Seq(Range(4, 6), Range(14, 16)))))
+  val range2rem = Resource(name = "range", `type` = Type.RANGES, ranges = Some(Ranges(Seq(Range(4, 6), Range(14, 14)))))
+  val rangeReq = Resource(name = "range", `type` = Type.RANGES, ranges = Some(Ranges(Seq(Range(2, 2))))) //, Range(15, 16)))))
+  val rangeX = Resource(name = "range", `type` = Type.RANGES, ranges = Some(Ranges(Seq(Range(2, 2), Range(15, 17)))))
 
   "trySubtractResource" should "subtract scalars" in {
-    ResourceProcessor.trySubtractResource(r1, r2) should be(Some(Resource("a", Type.SCALAR, Some(Scalar(2)))))
+    ResourceProcessor.trySubtractResource(r1, r2) should be(Some(Resource(name = "a", `type` = Type.SCALAR, scalar = Some(Scalar(2)))))
   }
 
   it should "not subtract if the name is different" in {
@@ -69,7 +69,7 @@ class ResourceProcessorSpec extends FlatSpec with Matchers with GeneratorDrivenP
 
   it should "subtract sets" in {
     ResourceProcessor.trySubtractResource(ry, rz1) match {
-      case Some(Resource("y", Type.SET, _, _, Some(mesos.Value.Set(es)), _, _, _, _)) => es.sorted should be(Seq("aaa", "ccc"))
+      case Some(Resource(_, "y", Type.SET, _, _, Some(mesos.Value.Set(es)), _, _, _, _, _, _, _)) => es.sorted should be(Seq("aaa", "ccc"))
       case x => fail(x.toString)
     }
 
@@ -78,7 +78,7 @@ class ResourceProcessorSpec extends FlatSpec with Matchers with GeneratorDrivenP
 
   "trySubtractResource Seq" should "only modify the first acceptable item" in {
     ResourceProcessor.trySubtractResource(Vector(r1, r1), r2) should be(
-      Some(Seq(Resource("a", Type.SCALAR, Some(Scalar(2))), r1))
+      Some(Seq(Resource(name = "a", `type` = Type.SCALAR, scalar = Some(Scalar(2))), r1))
     )
   }
 
@@ -108,7 +108,7 @@ class ResourceProcessorSpec extends FlatSpec with Matchers with GeneratorDrivenP
   it should "subtract only once, if there are more possibilities" in {
     val required = Seq(r1, rx2)
     ResourceProcessor.remainderOf(Seq(ry, rx, r2, r1), required) should be(
-      Some(Seq(ry, Resource("x", Type.SCALAR, Some(Scalar(1))), r2, Resource("a", Type.SCALAR, Some(Scalar(0)))))
+      Some(Seq(ry, Resource(name = "x", `type` = Type.SCALAR, scalar = Some(Scalar(1))), r2, Resource(name = "a", `type` = Type.SCALAR, scalar = Some(Scalar(0)))))
     )
   }
 
@@ -168,13 +168,13 @@ class ResourceProcessorSpec extends FlatSpec with Matchers with GeneratorDrivenP
 
   "addResource" should "add matching resources" in {
     ResourceProcessor.addResource(r1, r2) should be(
-      Resource("a", Type.SCALAR, Some(Scalar(5 + 3))) :: Nil
+      Resource(name = "a", `type` = Type.SCALAR, scalar = Some(Scalar(5 + 3))) :: Nil
     )
     ResourceProcessor.addResource(ry, rz2) should be(
-      Resource("y", Type.SET, set = Some(mesos.Value.Set(Seq("aaa", "bbb", "ccc", "xxx")))) :: Nil
+      Resource(name = "y", `type` = Type.SET, set = Some(mesos.Value.Set(Seq("aaa", "bbb", "ccc", "xxx")))) :: Nil
     )
     ResourceProcessor.addResource(range1, range2) should be(
-      Resource("range", Type.RANGES, ranges = Some(Ranges(Seq(Range(1, 3), Range(11, 13), Range(4, 6), Range(14, 16))))) :: Nil
+      Resource(name = "range", `type` = Type.RANGES, ranges = Some(Ranges(Seq(Range(1, 3), Range(11, 13), Range(4, 6), Range(14, 16))))) :: Nil
     )
   }
 
@@ -188,7 +188,7 @@ class ResourceProcessorSpec extends FlatSpec with Matchers with GeneratorDrivenP
     ResourceProcessor.sumResources(List(range1)) should be(List(range1))
     ResourceProcessor.sumResources(List(range1, r1)).to[Set] should be(Set(range1, r1))
     ResourceProcessor.sumResources(List(range1, r1, rz1)).to[Set] should be(Set(range1, r1, rz1))
-    ResourceProcessor.sumResources(List(range1, r1, rz1, r2)).to[Set] should be(Set(range1, Resource("a", Type.SCALAR, Some(Scalar(5 + 3))), rz1))
+    ResourceProcessor.sumResources(List(range1, r1, rz1, r2)).to[Set] should be(Set(range1, Resource(name = "a", `type` = Type.SCALAR, scalar = Some(Scalar(5 + 3))), rz1))
   }
 
   def multiSetFromRanges(rs: Seq[Range]): Map[Long, Int] = {

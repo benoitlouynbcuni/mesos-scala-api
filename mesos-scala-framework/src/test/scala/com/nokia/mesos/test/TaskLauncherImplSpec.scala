@@ -97,8 +97,8 @@ class TaskLauncherImplSpec extends FlatSpec with Matchers with ScalaFutures with
   // some helpers for test offers, resources and task descriptors
   val defaultSlaveID = SlaveID("slave-1")
   val defaultHost = "slave-1.cluster"
-  def resource(name: String) = immutable.Seq(Resource(name, Type.SCALAR, Some(Scalar(5))))
-  def offer(id: String, resources: Seq[Resource]) = Offer(OfferID(id), FrameworkID("fw-1"), defaultSlaveID, defaultHost, None, resources)
+  def resource(name: String) = immutable.Seq(Resource(name = name, `type` = Type.SCALAR, scalar = Some(Scalar(5))))
+  def offer(id: String, resources: Seq[Resource]) = Offer(OfferID(id), FrameworkID("fw-1"), defaultSlaveID, defaultHost, None, resources = resources)
 
   def offerEv(id: String, resources: Seq[Resource]) = MesosEvents.Offer(offer(id, resources))
   def offerEv(resourceName: String): MesosEvents.Offer = offerEv(resourceName, resource(resourceName))
@@ -184,7 +184,7 @@ class TaskLauncherImplSpec extends FlatSpec with Matchers with ScalaFutures with
 
     val fut = launcher.submitTask(taskDescriptor("my task", "RESOURCE_A"), slaveIdFilter("s1")).info
 
-    send(MesosEvents.Offer(Offer(OfferID("O2"), FrameworkID("fw-1"), SlaveID("s2"), "host", None, resource("RESOURCE_A"))))
+    send(MesosEvents.Offer(Offer(OfferID("O2"), FrameworkID("fw-1"), SlaveID("s2"), "host", None, resources = resource("RESOURCE_A"))))
     fut.isCompleted should be(false)
   }
 
@@ -195,7 +195,7 @@ class TaskLauncherImplSpec extends FlatSpec with Matchers with ScalaFutures with
 
     val fut = launcher.submitTask(taskDescriptor("my task", "RESOURCE_A"), slaveIdFilter("s2")).info
 
-    send(MesosEvents.Offer(Offer(OfferID("O2"), FrameworkID("fw-1"), SlaveID("s2"), "host", None, resource("RESOURCE_A"))))
+    send(MesosEvents.Offer(Offer(OfferID("O2"), FrameworkID("fw-1"), SlaveID("s2"), "host", None, resources = resource("RESOURCE_A"))))
     fut.futureValue should be(ti1)
   }
 
@@ -228,8 +228,7 @@ class TaskLauncherImplSpec extends FlatSpec with Matchers with ScalaFutures with
     val lt = launcher.submitTasks(Seq(taskd1, taskd2))
 
     send(offersEv("RESOURCE_A", "RESOURCE_B"))
-    lt(0).info.futureValue should be (ti1)
-    lt(1).info.futureValue should be (ti2)
+    lt.map(_.info.futureValue) should contain theSameElementsAs Seq(ti1, ti2)
   }
 
   it should "decline when filters refuse multiple offers" in {
@@ -255,8 +254,8 @@ class TaskLauncherImplSpec extends FlatSpec with Matchers with ScalaFutures with
     val lt = launcher.submitTasks(Seq(taskd1, taskd2), Some(differentSlaveFilter))
 
     send(MesosEvents.Offer(
-      Offer(OfferID("o1"), FrameworkID("fw-1"), SlaveID("s1"), "host1", None, resource("RESOURCE_A")),
-      Offer(OfferID("o2"), FrameworkID("fw-1"), SlaveID("s2"), "host2", None, resource("RESOURCE_B"))
+      Offer(OfferID("o1"), FrameworkID("fw-1"), SlaveID("s1"), "host1", None, resources = resource("RESOURCE_A")),
+      Offer(OfferID("o2"), FrameworkID("fw-1"), SlaveID("s2"), "host2", None, resources = resource("RESOURCE_B"))
     ))
 
     Future.sequence(lt.map(_.info)).futureValue should be(Seq(ti1, ti2))

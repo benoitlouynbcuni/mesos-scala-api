@@ -39,7 +39,7 @@ trait TestData {
   val masterInfo = MasterInfo("master id", 1, 2)
   val executorId = ExecutorID("executor id")
   val data = Array.fill[Byte](5)(0)
-  val resource = Resource("resource", Value.Type.SCALAR, Some(Value.Scalar(5)))
+  val resource = Resource(name = "resource", `type` = Value.Type.SCALAR, scalar = Some(Value.Scalar(5)))
   val request = Request(Some(slaveId), Seq(resource))
   val taskInfos = Seq(TaskInfo("task name", taskId, slaveId, Seq(resource)))
   val filters = Filters(Some(20.5))
