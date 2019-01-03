@@ -39,8 +39,8 @@ class TaskAllocatorSpec extends FlatSpec with Matchers {
 
   val ra = Resource(name = "a", `type` = Value.Type.SCALAR, scalar = Some(Value.Scalar(5)))
   val rb = Resource(name = "b", `type` = Value.Type.SCALAR, scalar = Some(Value.Scalar(6)))
-  val td1 = TaskRequest(TaskDescriptor("task 1", immutable.Seq(ra), Left(CommandInfo())), TaskID("tid1"))
-  val td2 = TaskRequest(TaskDescriptor("task 2", immutable.Seq(rb), Left(CommandInfo())), TaskID("tid2"))
+  val td1 = TaskRequest(TaskDescriptor("task 1", immutable.Seq(ra), Some(CommandInfo())), TaskID("tid1"))
+  val td2 = TaskRequest(TaskDescriptor("task 2", immutable.Seq(rb), Some(CommandInfo())), TaskID("tid2"))
 
   "Allocator" should "work for anti-affinity" in {
     val tasks = Seq(td1, td2)
